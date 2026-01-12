@@ -16,17 +16,22 @@ class WantToSendRecord:
     created_at_utc: str
 
 
-class JsonlFileStore:
-    """
-    MVP storage: JSON Lines file (one JSON object per line).
-    Good enough for append-only logs; easy to migrate later.
-    """
+@dataclass(frozen=True)
+class CanDeliverRecord:
+    user_id: int
+    username: str | None
+    name: str
+    route: str
+    date: str
+    created_at_utc: str
 
+
+class JsonlFileStore:
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
-    def append_want_to_send(self, record: WantToSendRecord) -> None:
+    def append(self, record: object) -> None:
         line = json.dumps(asdict(record), ensure_ascii=False)
         with self.path.open("a", encoding="utf-8") as f:
             f.write(line + "\n")

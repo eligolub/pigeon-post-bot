@@ -8,12 +8,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
-from ..services.file_store import JsonlFileStore, WantToSendRecord, utc_now_iso
+from ..services.file_store import JsonlFileStore, WantToSendRecord, CanDeliverRecord, utc_now_iso
 from ..settings import get_settings
 
 router = Router()
 
-STORE = JsonlFileStore(Path("data/want_to_send.jsonl"))
+WANT_STORE = JsonlFileStore(Path("data/want_to_send.jsonl"))
+CAN_STORE = JsonlFileStore(Path("data/can_deliver.jsonl"))
 SETTINGS = get_settings()
 
 
@@ -38,6 +39,10 @@ class WantToSendFlow(StatesGroup):
     route = State()
     date = State()
 
+class CanDeliverFlow(StatesGroup):
+    name = State()
+    route = State()
+    date = State()
 
 @router.message(CommandStart())
 async def start(message: Message, state: FSMContext) -> None:
@@ -56,7 +61,6 @@ async def want_to_send_begin(message: Message, state: FSMContext) -> None:
         "Введи, пожалуйста, имя.",
         reply_markup=ReplyKeyboardRemove(),  # убираем меню, чтобы не мешало вводу
     )
-
 
 @router.message(WantToSendFlow.name)
 async def want_to_send_name(message: Message, state: FSMContext) -> None:
@@ -100,7 +104,7 @@ async def want_to_send_date(message: Message, state: FSMContext) -> None:
     )
 
     # 1. сохраняем
-    STORE.append_want_to_send(record)
+    WANT_STORE.append(record)
 
     # 2. формируем текст для канала
     channel_text = (
@@ -129,9 +133,75 @@ async def want_to_send_date(message: Message, state: FSMContext) -> None:
 
 
 @router.message(F.text.casefold() == "могу передать")
-async def can_deliver_stub(message: Message) -> None:
+async def can_deliver_begin(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.set_state(CanDeliverFlow.name)
+    await message.answer("Введи, пожалуйста, имя.", reply_markup=ReplyKeyboardRemove())
+
+
+@router.message(CanDeliverFlow.name)
+async def can_deliver_name(message: Message, state: FSMContext) -> None:
+    text = (message.text or "").strip()
+    if len(text) < 2:
+        await message.answer("Имя слишком короткое. Введи имя ещё раз.")
+        return
+
+    await state.update_data(name=text)
+    await state.set_state(CanDeliverFlow.route)
+    await message.answer("Откуда и куда? (например: Ларнака → Будапешт)")
+
+
+@router.message(CanDeliverFlow.route)
+async def can_deliver_route(message: Message, state: FSMContext) -> None:
+    text = (message.text or "").strip()
+    if len(text) < 5:
+        await message.answer("Похоже, маршрута мало. Напиши 'откуда → куда' одним сообщением.")
+        return
+
+    await state.update_data(route=text)
+    await state.set_state(CanDeliverFlow.date)
+    await message.answer("Когда? (дата одним сообщением, например: 2026-02-01)")
+
+
+@router.message(CanDeliverFlow.date)
+async def can_deliver_date(message: Message, state: FSMContext) -> None:
+    text = (message.text or "").strip()
+    if len(text) < 4:
+        await message.answer("Дата выглядит странно. Введи дату ещё раз (например: 2026-02-01).")
+        return
+
+    data = await state.get_data()
+    record = CanDeliverRecord(
+        user_id=message.from_user.id,
+        username=message.from_user.username,
+        name=str(data["name"]),
+        route=str(data["route"]),
+        date=text,
+        created_at_utc=utc_now_iso(),
+    )
+
+    # 1) сохраняем в файл
+    CAN_STORE.append(record)
+
+    # 2) публикуем в канал
+    contact = f"@{record.username}" if record.username else "—"
+    channel_text = (
+        "✈️ <b>МОГУ ПЕРЕДАТЬ</b>\n\n"
+        f"👤 Имя: {record.name}\n"
+        f"🧭 Маршрут: {record.route}\n"
+        f"📅 Дата: {record.date}\n"
+        f"🔗 Контакт: {contact}"
+    )
+
+    await message.bot.send_message(
+        chat_id=SETTINGS.channel_id,
+        text=channel_text,
+    )
+
+    # 3) завершаем сценарий
+    await state.clear()
     await message.answer(
-        "Пока это заглушка. Следующим шагом сделаем такой же сценарий и публикацию в канал.",
+        "Супер, заявка опубликована в канале ✅",
         reply_markup=main_menu_kb(),
     )
 
