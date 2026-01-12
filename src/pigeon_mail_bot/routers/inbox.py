@@ -9,10 +9,12 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 from ..services.file_store import JsonlFileStore, WantToSendRecord, utc_now_iso
+from ..settings import get_settings
 
 router = Router()
 
 STORE = JsonlFileStore(Path("data/want_to_send.jsonl"))
+SETTINGS = get_settings()
 
 
 # --- UI
@@ -96,13 +98,34 @@ async def want_to_send_date(message: Message, state: FSMContext) -> None:
         date=text,
         created_at_utc=utc_now_iso(),
     )
+
+    # 1. сохраняем
     STORE.append_want_to_send(record)
 
+    # 2. формируем текст для канала
+    channel_text = (
+        "📦 <b>ХОЧУ ПЕРЕДАТЬ</b>\n\n"
+        f"👤 Имя: {record.name}\n"
+        f"✈️ Маршрут: {record.route}\n"
+        f"📅 Дата: {record.date}\n"
+        f"🔗 Контакт: @{record.username}" if record.username else "—"
+    )
+
+    # 3. отправляем в канал
+    await message.bot.send_message(
+        chat_id=SETTINGS.channel_id,
+        text=channel_text,
+    )
+
+    # 4. очищаем состояние
     await state.clear()
+
+    # 5. отвечаем пользователю
     await message.answer(
-        "Супер, записала. Если нужно — можешь отправить ещё одну заявку.",
+        "Супер, заявка опубликована в канале ✅",
         reply_markup=main_menu_kb(),
     )
+
 
 
 @router.message(F.text.casefold() == "могу передать")
