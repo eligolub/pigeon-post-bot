@@ -1,0 +1,20 @@
+# venv
+.venv/
+myenv/
+
+# env
+.env
+
+# runtime data
+data/*.jsonl
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE
+.vscode/
+.idea/
+.DS_Store

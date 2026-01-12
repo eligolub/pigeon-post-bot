@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/pigeon_mail_bot/__init__.py
+src/pigeon_mail_bot/app.py
+src/pigeon_mail_bot/logging_config.py
+src/pigeon_mail_bot/main.py
+src/pigeon_mail_bot/settings.py
+src/pigeon_mail_bot.egg-info/PKG-INFO
+src/pigeon_mail_bot.egg-info/SOURCES.txt
+src/pigeon_mail_bot.egg-info/dependency_links.txt
+src/pigeon_mail_bot.egg-info/requires.txt
+src/pigeon_mail_bot.egg-info/top_level.txt
+src/pigeon_mail_bot/routers/__init__.py
+src/pigeon_mail_bot/routers/inbox.py
+src/pigeon_mail_bot/services/__init__.py
+src/pigeon_mail_bot/services/file_store.py
