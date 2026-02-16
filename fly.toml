@@ -1,0 +1,14 @@
+# fly.toml app configuration file generated for pigeonpost on 2026-02-16T17:14:07+02:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = "pigeonpost"
+primary_region = "cdg"
+
+[processes]
+  app = "python -m pigeon_mail_bot.main"
+
+[[vm]]
+  memory = "1gb"
+  cpus = 1

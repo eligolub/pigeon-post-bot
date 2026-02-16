@@ -32,17 +32,41 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
     )
 
 
+SIZE_LABELS = {
+    "S": "документ",
+    "M": "одна вещь/предмет",
+    "L": "несколько вещей",
+}
+
+def size_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="S"), KeyboardButton(text="M"), KeyboardButton(text="L")]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+        input_field_placeholder="Выбери размер (S/M/L)",
+    )
+
+def size_prompt_text() -> str:
+    return (
+        "Выбери размер посылки:\n"
+        "S — документ\n"
+        "M — одна вещь/предмет\n"
+        "L — несколько вещей"
+    )
+
 # --- FSM
 
 class WantToSendFlow(StatesGroup):
     name = State()
     route = State()
     date = State()
+    size = State()
 
 class CanDeliverFlow(StatesGroup):
     name = State()
     route = State()
     date = State()
+    size = State()
 
 @router.message(CommandStart())
 async def start(message: Message, state: FSMContext) -> None:
@@ -52,15 +76,34 @@ async def start(message: Message, state: FSMContext) -> None:
         reply_markup=main_menu_kb(),
     )
 
+@router.message(WantToSendFlow.size)
+async def want_to_send_size(message: Message, state: FSMContext) -> None:
+    choice = (message.text or "").strip().upper()
+    if choice not in SIZE_LABELS:
+        await message.answer("Выбери размер кнопками: S / M / L", reply_markup=size_kb())
+        return
+
+    await state.update_data(size=choice)
+    await state.set_state(WantToSendFlow.name)
+    await message.answer("Введи, пожалуйста, имя.", reply_markup=ReplyKeyboardRemove())
+
+
+@router.message(CanDeliverFlow.size)
+async def can_deliver_size(message: Message, state: FSMContext) -> None:
+    choice = (message.text or "").strip().upper()
+    if choice not in SIZE_LABELS:
+        await message.answer("Выбери размер кнопками: S / M / L", reply_markup=size_kb())
+        return
+
+    await state.update_data(size=choice)
+    await state.set_state(CanDeliverFlow.name)
+    await message.answer("Введи, пожалуйста, имя.", reply_markup=ReplyKeyboardRemove())
 
 @router.message(F.text.casefold() == "хочу передать")
 async def want_to_send_begin(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await state.set_state(WantToSendFlow.name)
-    await message.answer(
-        "Введи, пожалуйста, имя.",
-        reply_markup=ReplyKeyboardRemove(),  # убираем меню, чтобы не мешало вводу
-    )
+    await state.set_state(WantToSendFlow.size)
+    await message.answer(size_prompt_text(), reply_markup=size_kb())
 
 @router.message(WantToSendFlow.name)
 async def want_to_send_name(message: Message, state: FSMContext) -> None:
@@ -100,6 +143,7 @@ async def want_to_send_date(message: Message, state: FSMContext) -> None:
         name=str(data["name"]),
         route=str(data["route"]),
         date=text,
+        size=str(data["size"]),
         created_at_utc=utc_now_iso(),
     )
 
@@ -107,12 +151,16 @@ async def want_to_send_date(message: Message, state: FSMContext) -> None:
     WANT_STORE.append(record)
 
     # 2. формируем текст для канала
+    size_desc = f'{record.size} — {SIZE_LABELS.get(record.size, "—")}'
+    contact = f"@{record.username}" if record.username else "—"
+
     channel_text = (
         "📦 <b>ХОЧУ ПЕРЕДАТЬ</b>\n\n"
+        f"📏 Размер: {size_desc}\n"
         f"👤 Имя: {record.name}\n"
         f"✈️ Маршрут: {record.route}\n"
         f"📅 Дата: {record.date}\n"
-        f"🔗 Контакт: @{record.username}" if record.username else "—"
+        f"🔗 Контакт: {contact}"
     )
 
     # 3. отправляем в канал
@@ -135,8 +183,8 @@ async def want_to_send_date(message: Message, state: FSMContext) -> None:
 @router.message(F.text.casefold() == "могу передать")
 async def can_deliver_begin(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await state.set_state(CanDeliverFlow.name)
-    await message.answer("Введи, пожалуйста, имя.", reply_markup=ReplyKeyboardRemove())
+    await state.set_state(CanDeliverFlow.size)
+    await message.answer(size_prompt_text(), reply_markup=size_kb())
 
 
 @router.message(CanDeliverFlow.name)
@@ -177,6 +225,7 @@ async def can_deliver_date(message: Message, state: FSMContext) -> None:
         name=str(data["name"]),
         route=str(data["route"]),
         date=text,
+        size=str(data["size"]),
         created_at_utc=utc_now_iso(),
     )
 
@@ -185,9 +234,12 @@ async def can_deliver_date(message: Message, state: FSMContext) -> None:
 
     # 2) публикуем в канал
     contact = f"@{record.username}" if record.username else "—"
+    size_desc = f'{record.size} — {SIZE_LABELS.get(record.size, "—")}'
+
     channel_text = (
         "✈️ <b>МОГУ ПЕРЕДАТЬ</b>\n\n"
         f"👤 Имя: {record.name}\n"
+        f"📏 Размер: {size_desc}\n"
         f"🧭 Маршрут: {record.route}\n"
         f"📅 Дата: {record.date}\n"
         f"🔗 Контакт: {contact}"

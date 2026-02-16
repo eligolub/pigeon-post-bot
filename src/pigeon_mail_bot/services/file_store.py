@@ -13,6 +13,7 @@ class WantToSendRecord:
     name: str
     route: str
     date: str
+    size: str
     created_at_utc: str
 
 
@@ -23,6 +24,7 @@ class CanDeliverRecord:
     name: str
     route: str
     date: str
+    size: str
     created_at_utc: str
 
 
