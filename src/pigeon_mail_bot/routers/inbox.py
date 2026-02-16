@@ -7,6 +7,7 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from aiogram.filters import Command
 
 from ..services.file_store import JsonlFileStore, WantToSendRecord, CanDeliverRecord, utc_now_iso
 from ..settings import get_settings
@@ -17,6 +18,16 @@ WANT_STORE = JsonlFileStore(Path("data/want_to_send.jsonl"))
 CAN_STORE = JsonlFileStore(Path("data/can_deliver.jsonl"))
 SETTINGS = get_settings()
 
+@router.message(Command("cancel"))
+async def cancel_cmd(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer("Ок, сбросила. Начнём заново.", reply_markup=main_menu_kb())
+
+
+@router.message(F.text.casefold() == "сбросить")
+async def cancel_btn(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer("Ок, сбросила. Начнём заново.", reply_markup=main_menu_kb())
 
 # --- UI
 
@@ -25,6 +36,7 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="хочу передать")],
             [KeyboardButton(text="могу передать")],
+            [KeyboardButton(text="сбросить")],
         ],
         resize_keyboard=True,
         one_time_keyboard=False,
@@ -57,16 +69,24 @@ def size_prompt_text() -> str:
 # --- FSM
 
 class WantToSendFlow(StatesGroup):
-    name = State()
-    route = State()
-    date = State()
     size = State()
+    name = State()
+    from_city = State()
+    to_city = State()
+    date = State()
 
 class CanDeliverFlow(StatesGroup):
-    name = State()
-    route = State()
-    date = State()
     size = State()
+    name = State()
+    from_city = State()
+    to_city = State()
+    date = State()
+
+@router.message(F.text.startswith("/"))
+async def any_command_resets(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer("Сбросила состояние. Выбери команду:", reply_markup=main_menu_kb())
+
 
 @router.message(CommandStart())
 async def start(message: Message, state: FSMContext) -> None:
@@ -113,18 +133,30 @@ async def want_to_send_name(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(name=text)
-    await state.set_state(WantToSendFlow.route)
-    await message.answer("Откуда и куда? (например: Ларнака → Будапешт)")
+    await state.set_state(WantToSendFlow.from_city)
+    await message.answer("Откуда передать? (например: Ларнака)")
 
 
-@router.message(WantToSendFlow.route)
-async def want_to_send_route(message: Message, state: FSMContext) -> None:
+@router.message(WantToSendFlow.from_city)
+async def want_to_send_from(message: Message, state: FSMContext) -> None:
     text = (message.text or "").strip()
-    if len(text) < 5:
-        await message.answer("Похоже, маршрута мало. Напиши 'откуда → куда' одним сообщением.")
+    if len(text) < 2:
+        await message.answer("Похоже, слишком коротко. Введи «откуда» ещё раз.")
         return
 
-    await state.update_data(route=text)
+    await state.update_data(from_city=text)
+    await state.set_state(WantToSendFlow.to_city)
+    await message.answer("Куда передать? (например: Будапешт)")
+
+
+@router.message(WantToSendFlow.to_city)
+async def want_to_send_to(message: Message, state: FSMContext) -> None:
+    text = (message.text or "").strip()
+    if len(text) < 2:
+        await message.answer("Похоже, слишком коротко. Введи «куда» ещё раз.")
+        return
+
+    await state.update_data(to_city=text)
     await state.set_state(WantToSendFlow.date)
     await message.answer("Когда? (дата одним сообщением, например: 2026-02-01)")
 
@@ -141,7 +173,8 @@ async def want_to_send_date(message: Message, state: FSMContext) -> None:
         user_id=message.from_user.id,
         username=message.from_user.username,
         name=str(data["name"]),
-        route=str(data["route"]),
+        from_city=str(data["from_city"]),
+        to_city=str(data["to_city"]),
         date=text,
         size=str(data["size"]),
         created_at_utc=utc_now_iso(),
@@ -158,7 +191,8 @@ async def want_to_send_date(message: Message, state: FSMContext) -> None:
         "📦 <b>ХОЧУ ПЕРЕДАТЬ</b>\n\n"
         f"📏 Размер: {size_desc}\n"
         f"👤 Имя: {record.name}\n"
-        f"✈️ Маршрут: {record.route}\n"
+        f"📍 Откуда: {record.from_city}\n"
+        f"🎯 Куда: {record.to_city}\n"
         f"📅 Дата: {record.date}\n"
         f"🔗 Контакт: {contact}"
     )
@@ -195,18 +229,30 @@ async def can_deliver_name(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(name=text)
-    await state.set_state(CanDeliverFlow.route)
-    await message.answer("Откуда и куда? (например: Ларнака → Будапешт)")
+    await state.set_state(CanDeliverFlow.from_city)
+    await message.answer("Откуда летишь/едешь? (например: Ларнака)")
 
 
-@router.message(CanDeliverFlow.route)
-async def can_deliver_route(message: Message, state: FSMContext) -> None:
+@router.message(CanDeliverFlow.from_city)
+async def can_deliver_from(message: Message, state: FSMContext) -> None:
     text = (message.text or "").strip()
-    if len(text) < 5:
-        await message.answer("Похоже, маршрута мало. Напиши 'откуда → куда' одним сообщением.")
+    if len(text) < 2:
+        await message.answer("Похоже, слишком коротко. Введи «откуда» ещё раз.")
         return
 
-    await state.update_data(route=text)
+    await state.update_data(from_city=text)
+    await state.set_state(CanDeliverFlow.to_city)
+    await message.answer("Куда летишь/едешь? (например: Будапешт)")
+
+
+@router.message(CanDeliverFlow.to_city)
+async def can_deliver_to(message: Message, state: FSMContext) -> None:
+    text = (message.text or "").strip()
+    if len(text) < 2:
+        await message.answer("Похоже, слишком коротко. Введи «куда» ещё раз.")
+        return
+
+    await state.update_data(to_city=text)
     await state.set_state(CanDeliverFlow.date)
     await message.answer("Когда? (дата одним сообщением, например: 2026-02-01)")
 
@@ -223,7 +269,8 @@ async def can_deliver_date(message: Message, state: FSMContext) -> None:
         user_id=message.from_user.id,
         username=message.from_user.username,
         name=str(data["name"]),
-        route=str(data["route"]),
+        from_city=str(data["from_city"]),
+        to_city=str(data["to_city"]),
         date=text,
         size=str(data["size"]),
         created_at_utc=utc_now_iso(),
@@ -240,7 +287,8 @@ async def can_deliver_date(message: Message, state: FSMContext) -> None:
         "✈️ <b>МОГУ ПЕРЕДАТЬ</b>\n\n"
         f"👤 Имя: {record.name}\n"
         f"📏 Размер: {size_desc}\n"
-        f"🧭 Маршрут: {record.route}\n"
+        f"📍 Откуда: {record.from_city}\n"
+        f"🎯 Куда: {record.to_city}\n"
         f"📅 Дата: {record.date}\n"
         f"🔗 Контакт: {contact}"
     )

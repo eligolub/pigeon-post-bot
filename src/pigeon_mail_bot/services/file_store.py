@@ -11,7 +11,8 @@ class WantToSendRecord:
     user_id: int
     username: str | None
     name: str
-    route: str
+    from_city: str
+    to_city: str
     date: str
     size: str
     created_at_utc: str
@@ -22,7 +23,8 @@ class CanDeliverRecord:
     user_id: int
     username: str | None
     name: str
-    route: str
+    from_city: str
+    to_city: str
     date: str
     size: str
     created_at_utc: str
