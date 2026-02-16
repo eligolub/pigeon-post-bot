@@ -1,4 +1,5 @@
 from __future__ import annotations
+from datetime import datetime
 
 from pathlib import Path
 
@@ -158,15 +159,22 @@ async def want_to_send_to(message: Message, state: FSMContext) -> None:
 
     await state.update_data(to_city=text)
     await state.set_state(WantToSendFlow.date)
-    await message.answer("Когда? (дата одним сообщением, например: 2026-02-01)")
+    await message.answer("Когда? (дата одним сообщением, например: 01.02.2026)")
 
 
 @router.message(WantToSendFlow.date)
 async def want_to_send_date(message: Message, state: FSMContext) -> None:
-    text = (message.text or "").strip()
-    if len(text) < 4:
-        await message.answer("Дата выглядит странно. Введи дату ещё раз (например: 2026-02-01).")
+    raw_text = (message.text or "").strip()
+
+    try:
+        parsed_date = datetime.strptime(raw_text, "%d.%m.%Y")
+    except ValueError:
+        await message.answer(
+            "Неверный формат даты.\nВведи в формате ДД.ММ.ГГГГ\nНапример: 07.02.2026"
+        )
         return
+
+    iso_date = parsed_date.strftime("%Y-%m-%d")
 
     data = await state.get_data()
     record = WantToSendRecord(
@@ -175,10 +183,11 @@ async def want_to_send_date(message: Message, state: FSMContext) -> None:
         name=str(data["name"]),
         from_city=str(data["from_city"]),
         to_city=str(data["to_city"]),
-        date=text,
+        date=iso_date,
         size=str(data["size"]),
         created_at_utc=utc_now_iso(),
     )
+
 
     # 1. сохраняем
     WANT_STORE.append(record)
@@ -193,7 +202,7 @@ async def want_to_send_date(message: Message, state: FSMContext) -> None:
         f"👤 Имя: {record.name}\n"
         f"📍 Откуда: {record.from_city}\n"
         f"🎯 Куда: {record.to_city}\n"
-        f"📅 Дата: {record.date}\n"
+        f"📅 Дата: {raw_text}\n"
         f"🔗 Контакт: {contact}"
     )
 
@@ -254,15 +263,22 @@ async def can_deliver_to(message: Message, state: FSMContext) -> None:
 
     await state.update_data(to_city=text)
     await state.set_state(CanDeliverFlow.date)
-    await message.answer("Когда? (дата одним сообщением, например: 2026-02-01)")
+    await message.answer("Когда? (дата одним сообщением, например: 01.02.2026)")
 
 
 @router.message(CanDeliverFlow.date)
 async def can_deliver_date(message: Message, state: FSMContext) -> None:
-    text = (message.text or "").strip()
-    if len(text) < 4:
-        await message.answer("Дата выглядит странно. Введи дату ещё раз (например: 2026-02-01).")
+    raw_text = (message.text or "").strip()
+
+    try:
+        parsed_date = datetime.strptime(raw_text, "%d.%m.%Y")
+    except ValueError:
+        await message.answer(
+            "Неверный формат даты.\nВведи в формате ДД.ММ.ГГГГ\nНапример: 07.02.2026"
+        )
         return
+
+    iso_date = parsed_date.strftime("%Y-%m-%d")
 
     data = await state.get_data()
     record = CanDeliverRecord(
@@ -271,7 +287,7 @@ async def can_deliver_date(message: Message, state: FSMContext) -> None:
         name=str(data["name"]),
         from_city=str(data["from_city"]),
         to_city=str(data["to_city"]),
-        date=text,
+        date=iso_date,
         size=str(data["size"]),
         created_at_utc=utc_now_iso(),
     )
@@ -289,7 +305,7 @@ async def can_deliver_date(message: Message, state: FSMContext) -> None:
         f"📏 Размер: {size_desc}\n"
         f"📍 Откуда: {record.from_city}\n"
         f"🎯 Куда: {record.to_city}\n"
-        f"📅 Дата: {record.date}\n"
+        f"📅 Дата: {raw_text}\n"
         f"🔗 Контакт: {contact}"
     )
 
