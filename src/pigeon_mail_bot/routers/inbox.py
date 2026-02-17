@@ -54,9 +54,14 @@ async def cancel_cmd(message: Message, state: FSMContext) -> None:
 
 @router.message(F.text.casefold() == "сбросить")
 async def cancel_btn(message: Message, state: FSMContext) -> None:
+    current = await state.get_state()
+    if current is None:
+        # если пользователь не в сценарии — игнорируем/мягко направляем
+        await message.answer("Сейчас нечего сбрасывать. Выбери команду:", reply_markup=main_menu_kb())
+        return
+
     await state.clear()
     await message.answer("Ок, сбросила. Начнём заново.", reply_markup=main_menu_kb())
-
 # --- UI
 
 def main_menu_kb() -> ReplyKeyboardMarkup:
@@ -64,11 +69,18 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="хочу передать")],
             [KeyboardButton(text="могу передать")],
-            [KeyboardButton(text="сбросить")],
         ],
         resize_keyboard=True,
         one_time_keyboard=False,
         input_field_placeholder="Выбери действие",
+    )
+
+def flow_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="сбросить")]],
+        resize_keyboard=True,
+        one_time_keyboard=False,
+        input_field_placeholder="Можно сбросить и начать заново",
     )
 
 
@@ -110,11 +122,6 @@ class CanDeliverFlow(StatesGroup):
     to_city = State()
     date = State()
 
-@router.message(F.text.startswith("/"))
-async def any_command_resets(message: Message, state: FSMContext) -> None:
-    await state.clear()
-    await message.answer("Сбросила состояние. Выбери команду:", reply_markup=main_menu_kb())
-
 
 @router.message(CommandStart())
 async def start(message: Message, state: FSMContext) -> None:
@@ -133,7 +140,7 @@ async def want_to_send_size(message: Message, state: FSMContext) -> None:
 
     await state.update_data(size=choice)
     await state.set_state(WantToSendFlow.name)
-    await message.answer("Введи, пожалуйста, имя.", reply_markup=ReplyKeyboardRemove())
+    await message.answer("Введи, пожалуйста, имя.", reply_markup=flow_kb())
 
 
 @router.message(CanDeliverFlow.size)
@@ -145,7 +152,7 @@ async def can_deliver_size(message: Message, state: FSMContext) -> None:
 
     await state.update_data(size=choice)
     await state.set_state(CanDeliverFlow.name)
-    await message.answer("Введи, пожалуйста, имя.", reply_markup=ReplyKeyboardRemove())
+    await message.answer("Введи, пожалуйста, имя.", reply_markup=flow_kb())
 
 @router.message(F.text.casefold() == "хочу передать")
 async def want_to_send_begin(message: Message, state: FSMContext) -> None:
