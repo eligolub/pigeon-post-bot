@@ -11,13 +11,40 @@ from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup, ReplyKey
 from aiogram.filters import Command
 
 from ..services.file_store import JsonlFileStore, WantToSendRecord, CanDeliverRecord, utc_now_iso
-from ..settings import get_settings
+from ..settings import get_settings, Settings
+
+import asyncio
+from ..services.sheets_store import GoogleSheetsStore, SheetRow, utc_now_iso as sheets_utc_now_iso
+
+import logging
+log = logging.getLogger(__name__)
 
 router = Router()
 
-WANT_STORE = JsonlFileStore(Path("data/want_to_send.jsonl"))
-CAN_STORE = JsonlFileStore(Path("data/can_deliver.jsonl"))
-SETTINGS = get_settings()
+SETTINGS: Settings = get_settings()
+
+WANT_STORE: JsonlFileStore | None = None
+CAN_STORE: JsonlFileStore | None = None
+
+if SETTINGS.enable_json_store:
+    WANT_STORE = JsonlFileStore(Path("data/want_to_send.jsonl"))
+    CAN_STORE = JsonlFileStore(Path("data/can_deliver.jsonl"))
+    log.info("JSON store enabled")
+else:
+    log.info("JSON store disabled")
+
+SHEETS: GoogleSheetsStore | None = None
+try:
+    SHEETS = GoogleSheetsStore(
+        sheet_id=SETTINGS.google_sheet_id,
+        tab_name=SETTINGS.google_sheet_tab,
+        sa_json_content=SETTINGS.google_sa_json_content,
+        sa_json_path=SETTINGS.google_sa_json,
+    )
+    log.info("Google Sheets enabled: sheet_id=%s tab=%s", SETTINGS.google_sheet_id, SETTINGS.google_sheet_tab)
+except Exception:
+    log.exception("Google Sheets init failed")
+    SHEETS = None
 
 @router.message(Command("cancel"))
 async def cancel_cmd(message: Message, state: FSMContext) -> None:
@@ -190,7 +217,11 @@ async def want_to_send_date(message: Message, state: FSMContext) -> None:
 
 
     # 1. сохраняем
-    WANT_STORE.append(record)
+    if WANT_STORE is not None:
+        try:
+            WANT_STORE.append(record)
+        except Exception:
+            log.exception("Failed to write WANT record to jsonl")
 
     # 2. формируем текст для канала
     size_desc = f'{record.size} — {SIZE_LABELS.get(record.size, "—")}'
@@ -211,7 +242,20 @@ async def want_to_send_date(message: Message, state: FSMContext) -> None:
         chat_id=SETTINGS.channel_id,
         text=channel_text,
     )
-
+    
+    if SHEETS is not None:
+        row = SheetRow(
+            ts_utc=sheets_utc_now_iso(),
+            event="want_to_send",
+            user_id=record.user_id,
+            username=record.username,
+            name=record.name,
+            size=record.size,
+            from_city=record.from_city,
+            to_city=record.to_city,
+            date_human=raw_text,  # если ты уже перешла на ввод 07.02.2026
+        )
+        await asyncio.to_thread(SHEETS.append, row)
     # 4. очищаем состояние
     await state.clear()
 
@@ -293,7 +337,11 @@ async def can_deliver_date(message: Message, state: FSMContext) -> None:
     )
 
     # 1) сохраняем в файл
-    CAN_STORE.append(record)
+    if CAN_STORE is not None:
+        try:
+            CAN_STORE.append(record)
+        except Exception:
+            log.exception("Failed to write WANT record to jsonl")
 
     # 2) публикуем в канал
     contact = f"@{record.username}" if record.username else "—"
@@ -313,6 +361,19 @@ async def can_deliver_date(message: Message, state: FSMContext) -> None:
         chat_id=SETTINGS.channel_id,
         text=channel_text,
     )
+    if SHEETS is not None:
+        row = SheetRow(
+            ts_utc=sheets_utc_now_iso(),
+            event="can_deliver",
+            user_id=record.user_id,
+            username=record.username,
+            name=record.name,
+            size=record.size,
+            from_city=record.from_city,
+            to_city=record.to_city,
+            date_human=raw_text,
+        )
+        await asyncio.to_thread(SHEETS.append, row)
 
     # 3) завершаем сценарий
     await state.clear()

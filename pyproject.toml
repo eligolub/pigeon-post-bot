@@ -7,6 +7,8 @@ dependencies = [
   "pydantic>=2.6",
   "pydantic-settings>=2.2",
   "python-dotenv>=1.0",
+  "gspread>=6.0.0",
+  "google-auth>=2.0.0", 
 ]
 
 [tool.ruff]
